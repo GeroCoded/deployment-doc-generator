@@ -104,6 +104,7 @@ def render_code_comparison(manifest: dict, repo_changes: list[RepoChanges],
     context = {
         "ticket_ids": join_ticket_ids([t["id"] for t in cr.get("tickets", [])]),
         "deploy_date": cr.get("deploy_date", ""),
+        "tickets": cr.get("tickets", []),  # for the INTRODUCTION ticket list
         "repos": repos_ctx,
     }
     tpl.render(context, autoescape=True)

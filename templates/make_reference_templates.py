@@ -4,63 +4,77 @@ These are NOT meant to ship as-is — they show you exactly what Jinja/docxtpl
 markup to paste into your real company-branded Technical Summary / Code
 Comparison / Change Request files. Run once; then mirror the placeholders into
 your branded copies.
+
+Layout (Word docs):
+  Page 1  — Title + automatic Table of Contents (Word field, updates on open)
+  Page 2+ — content with real Heading styles so the TOC populates
 """
 import os
 
 from docx import Document
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from docx.shared import Pt
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def _add_toc(doc, heading_levels="1-1"):
-    """Insert a Word TOC field (index). Word fills it on open / field update."""
+def _toc_field(doc, heading_levels="1-3"):
+    """Insert a real Word Table of Contents field (Automatic Table).
+    Word builds/refreshes it from the Heading styles when the doc is opened
+    and fields are updated."""
     p = doc.add_paragraph()
     run = p.add_run()
-    for char_type, instr in (("begin", None), (None, f' TOC \\o "{heading_levels}" \\h \\z \\u '),
-                             ("separate", None)):
-        el = OxmlElement("w:fldChar") if char_type else OxmlElement("w:instrText")
-        if char_type:
-            el.set(qn("w:fldCharType"), char_type)
-        else:
-            el.set(qn("xml:space"), "preserve")
-            el.text = instr
-        run._r.append(el)
-    placeholder = p.add_run("Right-click → Update Field to build the index.")
-    placeholder.italic = True
-    end = p.add_run()
-    end_el = OxmlElement("w:fldChar")
-    end_el.set(qn("w:fldCharType"), "end")
-    end._r.append(end_el)
+    begin = OxmlElement("w:fldChar"); begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText"); instr.set(qn("xml:space"), "preserve")
+    instr.text = f' TOC \\o "{heading_levels}" \\h \\z \\u '
+    sep = OxmlElement("w:fldChar"); sep.set(qn("w:fldCharType"), "separate")
+    run._r.append(begin); run._r.append(instr); run._r.append(sep)
+    hint = p.add_run("Right-click here and choose “Update Field” to build the table of contents.")
+    hint.italic = True
+    end_run = p.add_run()
+    end = OxmlElement("w:fldChar"); end.set(qn("w:fldCharType"), "end")
+    end_run._r.append(end)
 
 
 def _force_update_fields(doc):
+    """Make Word offer to update fields (the TOC) when the document is opened."""
     settings = doc.settings.element
     upd = OxmlElement("w:updateFields")
     upd.set(qn("w:val"), "true")
     settings.append(upd)
 
 
-def make_technical_summary():
-    doc = Document()
-    doc.add_paragraph("Technical Summary - {{ ticket_ids }}", style="Title")
-    doc.add_paragraph("Change Request {{ cr_number }} — {{ deploy_date }}", style="Subtitle")
-    doc.add_paragraph("Index", style="Heading 1")
-    _add_toc(doc, "1-1")
+def _title_page(doc, title_text):
+    doc.add_paragraph(title_text, style="Title")
+    # NOT a Heading style — otherwise this label would list itself inside the TOC.
+    label = doc.add_paragraph()
+    run = label.add_run("Table of Contents")
+    run.bold = True
+    run.font.size = Pt(14)
+    _toc_field(doc, "1-3")
     doc.add_page_break()
 
+
+def make_technical_summary():
+    doc = Document()
+    _title_page(doc, "Technical Summary - {{ ticket_ids }}")
+
+    # One section per ticket; each ticket starts on a new page.
     doc.add_paragraph("{%p for t in tickets %}")
-    doc.add_paragraph("{{ t.id }}: {{ t.title }}", style="Heading 1")
+    doc.add_paragraph("{%p if not loop.first %}")
+    doc.add_page_break()
+    doc.add_paragraph("{%p endif %}")
+    doc.add_paragraph("{{ t.id }}: {{ t.title }}", style="Heading 2")
     for n, (q, field) in enumerate([
         ("What is the problem?", "t.problem"),
         ("How does this affect the users?", "t.user_impact"),
         ("Solution Implemented", "t.solution"),
         ("How was this tested?", "t.testing"),
     ], start=1):
-        doc.add_paragraph(f"{n}) {q}", style="Heading 2")
+        doc.add_paragraph(f"{n}) {q}", style="Heading 3")
         doc.add_paragraph("{{ %s }}" % field)
     doc.add_paragraph("{%p endfor %}")
 
@@ -70,21 +84,37 @@ def make_technical_summary():
 
 def make_code_comparison():
     doc = Document()
-    doc.add_paragraph("Code Comparison - {{ ticket_ids }}", style="Title")
+    _title_page(doc, "Code Comparison - {{ ticket_ids }}")
 
+    # Page 2: introduction + the list of tickets covered.
+    doc.add_paragraph("INTRODUCTION", style="Heading 2")
+    doc.add_paragraph(
+        "This document will present the Code Comparison of the changes made in "
+        "the following items:"
+    )
+    doc.add_paragraph("{%p for t in tickets %}")
+    doc.add_paragraph("{{ t.id }} - {{ t.title }}", style="List Bullet")
+    doc.add_paragraph("{%p endfor %}")
+    doc.add_page_break()
+
+    # Page 3+: per-repo comparison (each repo on its own page).
     doc.add_paragraph("{%p for repo in repos %}")
-    doc.add_paragraph("{{ repo.name }}", style="Heading 1")
+    doc.add_paragraph("{%p if not loop.first %}")
+    doc.add_page_break()
+    doc.add_paragraph("{%p endif %}")
+    doc.add_paragraph("{{ repo.name }}", style="Heading 2")
     doc.add_paragraph("Version to be deployed: {{r repo.deploy_link }}", style="List Bullet")
     doc.add_paragraph("Current PROD version: {{r repo.prod_link }}", style="List Bullet")
     doc.add_paragraph("Comparison Link: {{r repo.compare_link }}", style="List Bullet")
-    doc.add_paragraph("Files changed", style="Heading 2")
+    doc.add_paragraph("Files changed", style="Heading 3")
     doc.add_paragraph("{{ repo.stat }}")
-    doc.add_paragraph("Commits", style="Heading 2")
+    doc.add_paragraph("Commits", style="Heading 3")
     doc.add_paragraph("{{r repo.commits_rich }}")
-    doc.add_paragraph("Code changes", style="Heading 2")
+    doc.add_paragraph("Code changes", style="Heading 3")
     doc.add_paragraph("{{r repo.diff_rich }}")
     doc.add_paragraph("{%p endfor %}")
 
+    _force_update_fields(doc)
     doc.save(os.path.join(HERE, "code_comparison_template.docx"))
 
 
