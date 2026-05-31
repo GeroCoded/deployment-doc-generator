@@ -1,0 +1,9 @@
+.venv/
+.sandbox/
+out/
+__pycache__/
+*.pyc
+.DS_Store
+deploydoc.prefs.yml
+# Ignore a real manifest at the repo root, but keep examples/deployment.yml
+/deployment.yml

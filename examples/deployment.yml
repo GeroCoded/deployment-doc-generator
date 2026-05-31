@@ -1,0 +1,46 @@
+# Single source of truth for one Change Request / deployment day.
+# Rovo fills the FACTS; you fill the human-judgment fields (left as TODO).
+change_request:
+  cr_number: "CHG0012345"
+  deploy_date: "2026-06-15"
+
+  # GitHub Enterprise base + org. Per-repo links are built as:
+  #   {github_base}/{org}/{name}/releases/tag/{tag}
+  #   {github_base}/{org}/{name}/compare/{prod_tag}...{deploy_tag}
+  github_base: "https://github.domain.com"
+  org: "my-org"
+
+  # Optional knobs:
+  # repos_root: "/home/me/work/repos"   # if set, repos without a path are found here by name
+  # exclude: ["package-lock.json", "*.snap"]
+  # max_diff_lines: 4000
+
+  tickets:
+    - id: "PROJ-123"
+      title: "Fix checkout total rounding"
+      problem: "Totals rounded down by one cent on multi-currency carts."        # Rovo
+      user_impact: "Customers were occasionally undercharged; finance reconciliation failed." # Rovo
+      solution: "Switched to banker's rounding in the shared currency util."     # Rovo
+      testing: "Unit tests for edge cases + manual QA on staging across 3 currencies."  # Rovo
+    - id: "PROJ-124"
+      title: "Add loading skeleton to orders page"
+      problem: "Orders page showed a blank screen while data loaded."
+      user_impact: "Users thought the page was broken and refreshed repeatedly."
+      solution: "Added a skeleton component using the corporate UI library."
+      testing: "Visual QA + Vitest component test."
+
+  repos:
+    - name: "checkout-mfe"
+      path: "./.sandbox/checkout-mfe"   # local clone (or rely on repos_root)
+      prod_tag: "v1.4.2"
+      deploy_tag: "v1.5.0"
+
+  # ----- Change Request (Excel) human-judgment fields -----
+  business_justification: "TODO: why this deployment is needed now"
+  change_summary: "TODO: 2-3 line summary of the overall change"
+  impact_if_not_deployed: "TODO: consequence of skipping this deployment"
+  worst_case: "TODO: worst realistic outcome if it goes wrong in PROD"
+  rollback_plan: "TODO: how to back out (redeploy backout versions, etc.)"
+  deployment_steps:
+    - "TODO: step 1"
+    - "TODO: step 2"
