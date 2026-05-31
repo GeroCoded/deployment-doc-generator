@@ -15,10 +15,10 @@ nothing leaves the machine.
 ## How it fits together
 
 ```
-Rovo  ──► deployment.yml ──►  deploydoc  ──►  3 documents
-(facts)   (+ you fill        (reads local
-           the TODO            git for diffs)
-           human fields)
+Copilot + Atlassian MCP ──► deployment.yml ──►  deploydoc  ──►  3 documents
+(reads tickets, writes      (+ you fill        (reads local
+ facts; Rovo fallback)       the TODO            git for diffs)
+                             human fields)
 ```
 
 - **Deterministic / auto:** ticket IDs & titles, repos, commit list, `git diff`,
@@ -39,15 +39,46 @@ pip install -r requirements.txt      # docxtpl, openpyxl, jinja2, pyyaml
 
 ## Use
 
-1. **Generate the manifest** — paste `rovo_prompt.md` into Rovo with your ticket IDs.
-   Save the YAML as `deployment.yml`. Fill in the `TODO:` fields (tags, steps, risks).
-2. **Run:**
+1. **Generate the manifest** — two ways:
+   - **Recommended (Copilot + Atlassian MCP):** in VS Code agent mode, run the
+     `/generate-deployment-manifest` prompt with your ticket IDs. Copilot reads the
+     tickets through the Atlassian (Rovo) MCP server, drafts the answers, pulls the
+     repo labels, and writes `deployment.yml`. See *Manifest via Copilot + Atlassian MCP* below.
+   - **Manual fallback:** paste `rovo_prompt.md` into Rovo chat and save the YAML.
+   Then fill the `TODO:` fields (tags, steps, risks).
+2. **Validate (optional but recommended):**
+   ```bash
+   python -m deploydoc validate --manifest deployment.yml
+   ```
+   Reports structural errors and lists remaining `TODO:` fields.
+3. **Run:**
    ```bash
    python -m deploydoc generate --manifest deployment.yml --out ./out
    ```
-   Output lands in `./out/`. Any unfilled `TODO:` is listed; a missing git tag
-   aborts that repo loudly (it will never emit an empty diff). `--strict` makes
-   any repo error fail the whole run.
+   Output lands in `./out/`. The manifest is validated first (invalid → aborts before
+   writing anything). A missing git tag aborts that repo loudly (it will never emit an
+   empty diff). `--strict` makes any repo error fail the whole run.
+
+## Manifest via Copilot + Atlassian MCP
+
+This removes the manual copy step: Copilot fetches the tickets and writes the manifest.
+
+1. **Enable the Atlassian MCP server.** `.vscode/mcp.json` is already in the repo:
+   ```json
+   { "servers": { "atlassian": { "type": "http", "url": "https://mcp.atlassian.com/v1/mcp/authv2" } } }
+   ```
+   Open it in VS Code and **Start** the server (or run `MCP: Add Server`). The first
+   connection opens a browser **OAuth** consent. Per-tool calls will prompt for approval.
+   > **Admin prerequisite:** an Atlassian org admin must authorize your site for the
+   > Rovo MCP server first. If OAuth fails, that's the likely cause — ask your admin
+   > to enable it in the Rovo MCP server settings.
+2. **Run the prompt** in agent mode: `/generate-deployment-manifest`, then give your
+   ticket IDs. It writes `deployment.yml` (titles + 4 answers + repos from labels filled;
+   tags/dates/risk left as `TODO:`).
+3. **Repo labels** must be the **literal repository name** (label `checkout-mfe` → repo
+   `checkout-mfe`). Adjust the rule in `.github/prompts/generate-deployment-manifest.prompt.md`
+   if your convention differs.
+4. Fill the `TODO:` fields, then validate + generate as above.
 
 ## Adapting your company templates (one-time)
 
@@ -105,6 +136,6 @@ max_diff_lines: 4000
 
 ## Roadmap
 
-- **Phase 2:** direct Jira API to pre-fill the manifest (skip the Rovo copy step) —
-  once API access is confirmed.
-- **Phase 3:** wrap in a CLI / package it for the central AI-tools repo.
+- **Phase 1 (done):** manifest → 3 documents, with local git diffs and template filling.
+- **Phase 2 (done):** Copilot + Atlassian MCP writes the manifest from ticket IDs.
+- **Phase 3:** package / distribute for the central AI-tools repo.

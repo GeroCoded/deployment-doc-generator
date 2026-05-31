@@ -14,6 +14,7 @@ import yaml
 from .git_collector import GitCollectorError, collect_repo, resolve_repo_path
 from .render_docx import render_code_comparison, render_technical_summary
 from .render_xlsx import render_change_request
+from .validate import validate_manifest
 
 DEFAULT_TEMPLATES = {
     "technical_summary": "templates/technical_summary_template.docx",
@@ -27,30 +28,37 @@ def _load_yaml(path: str) -> dict:
         return yaml.safe_load(f)
 
 
-def _scan_todos(manifest: dict) -> list[str]:
-    """Flag any human field the manifest author (or Rovo) left as TODO."""
-    todos: list[str] = []
+def _report(errors: list[str], warnings: list[str]) -> None:
+    for w in warnings:
+        print(f"  TODO/warn: {w}")
+    for e in errors:
+        print(f"ERROR: {e}", file=sys.stderr)
 
-    def walk(node, trail):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                walk(v, f"{trail}.{k}" if trail else k)
-        elif isinstance(node, list):
-            for i, v in enumerate(node):
-                walk(v, f"{trail}[{i}]")
-        elif isinstance(node, str) and node.strip().upper().startswith("TODO"):
-            todos.append(trail)
 
-    walk(manifest, "")
-    return todos
+def cmd_validate(args: argparse.Namespace) -> int:
+    manifest = _load_yaml(args.manifest)
+    errors, warnings = validate_manifest(manifest)
+    _report(errors, warnings)
+    if errors:
+        print(f"\nInvalid manifest: {len(errors)} error(s).", file=sys.stderr)
+        return 1
+    print(f"\nManifest OK ({len(warnings)} TODO/warning(s)).")
+    return 0
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
     manifest = _load_yaml(args.manifest)
-    cr = manifest.get("change_request")
-    if not cr:
-        print("ERROR: manifest has no top-level 'change_request' key", file=sys.stderr)
+    errors, warnings = validate_manifest(manifest)
+    if warnings:
+        print("Manifest notes (TODO fields will appear literally in the docs):")
+        _report([], warnings)
+        print()
+    if errors:
+        _report(errors, [])
+        print(f"\nRefusing to generate from an invalid manifest ({len(errors)} error(s)).",
+              file=sys.stderr)
         return 2
+    cr = manifest["change_request"]
 
     prefs = _load_yaml(args.prefs) if args.prefs and os.path.exists(args.prefs) else {}
     repos_root = prefs.get("repos_root") or cr.get("repos_root")
@@ -59,13 +67,6 @@ def cmd_generate(args: argparse.Namespace) -> int:
     exclude = cr.get("exclude", prefs.get("exclude", []))
     max_diff_lines = int(cr.get("max_diff_lines", prefs.get("max_diff_lines", 4000)))
     fetch = not args.no_fetch
-
-    todos = _scan_todos(manifest)
-    if todos:
-        print("NOTE: the following fields are still TODO (will appear literally in the docs):")
-        for t in todos:
-            print(f"  - {t}")
-        print()
 
     os.makedirs(args.out, exist_ok=True)
 
@@ -134,6 +135,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--no-fetch", action="store_true", help="skip 'git fetch --tags'")
     g.add_argument("--strict", action="store_true", help="abort if any repo fails to collect")
     g.set_defaults(func=cmd_generate)
+
+    v = sub.add_parser("validate", help="check a deployment.yml without generating docs")
+    v.add_argument("--manifest", required=True, help="path to deployment.yml")
+    v.set_defaults(func=cmd_validate)
 
     args = parser.parse_args(argv)
     return args.func(args)
