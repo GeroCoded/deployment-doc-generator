@@ -1,5 +1,5 @@
 ---
-mode: agent
+agent: agent
 description: Generate a deploydoc deployment.yml from Jira tickets via the Atlassian (Rovo) MCP server
 ---
 
